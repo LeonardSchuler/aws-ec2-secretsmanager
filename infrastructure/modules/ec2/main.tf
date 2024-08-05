@@ -7,7 +7,7 @@ resource "random_string" "suffix" {
 module "iam_policy" {
   source = "terraform-aws-modules/iam/aws//modules/iam-policy"
 
-  description = "Secretsmanager read access"
+  description = "Read and write access to a secret in Secrets Manager."
 
   policy = <<EOF
 {
@@ -15,10 +15,11 @@ module "iam_policy" {
   "Statement": [
     {
       "Action": [
-        "secretsmanager:GetSecretValue"
+        "secretsmanager:GetSecretValue",
+        "secretsmanager:PutSecretValue"
       ],
       "Effect": "Allow",
-      "Resource": "*"
+      "Resource": "${var.secret_arn}"
     }
   ]
 }
@@ -35,7 +36,6 @@ module "security_group" {
 
   vpc_id = var.vpc_id
 
-  egress_rules = ["https-443-tcp"]
 
   tags = var.tags
 }
@@ -47,10 +47,11 @@ module "ec2" {
   name                   = var.name
   subnet_id              = var.subnet_id
   vpc_security_group_ids = [module.security_group.security_group_id]
-  key_name               = "ec2secret" # TODO: remove hard coded key. tmp fix for not working SSM
 
   ami_ssm_parameter = "/aws/service/ami-amazon-linux-latest/al2023-ami-kernel-default-x86_64"
   instance_type     = var.instance_type
+
+  #associate_public_ip_address = true
 
   create_iam_instance_profile = true
   iam_role_description        = "IAM role for EC2 instance"
@@ -58,6 +59,11 @@ module "ec2" {
     AmazonSSMManagedInstanceCore = "arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore",
     Custom                       = module.iam_policy.arn
   }
+  # fix: needed for SSM to start properly
+  user_data = <<-EOT
+    #!/bin/bash
+    sudo systemctl restart amazon-ssm-agent.service
+  EOT
 
   tags = var.tags
 }
